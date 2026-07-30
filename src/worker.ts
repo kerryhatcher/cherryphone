@@ -1,8 +1,11 @@
 /**
  * CherryPhone Worker — serves frontend, handles auth, D1 storage, Twilio tokens.
  *
- * Protected by Cloudflare Access. User identity comes from the
- * Cf-Access-Authenticated-User-Email header set by Access.
+ * Protected by Cloudflare Access. User identity is derived from the
+ * Cf-Access-Jwt-Assertion header, which is verified against the Access
+ * team's JWKS before trusting any claim in it. The
+ * Cf-Access-Authenticated-User-Email header is NEVER trusted directly —
+ * it is a plain HTTP header that anyone can forge on unprotected routes.
  *
  * API endpoints:
  *   GET  /api/config  — get current user's Twilio config
@@ -12,7 +15,7 @@
  *   POST /api/logs    — log a call event
  */
 
-import { SignJWT } from "jose";
+import { SignJWT, createRemoteJWKSet, jwtVerify } from "jose";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -20,6 +23,8 @@ interface Env {
 	DB: D1Database;
 	ASSETS: Fetcher;
 	ENCRYPTION_KEY: string;
+	ACCESS_TEAM_DOMAIN: string;
+	ACCESS_AUD: string;
 }
 
 interface TwilioConfig {
@@ -46,8 +51,11 @@ interface ApiResponse {
 
 // ── Constants ────────────────────────────────────────────────────────
 const TOKEN_TTL = 3600; // 1 hour
+
+// This app is same-origin only — the Worker serves its own frontend via
+// the ASSETS binding, so no cross-origin caller should ever need these
+// endpoints. No Access-Control-Allow-Origin header is set.
 const CORS_HEADERS = {
-	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 	"Access-Control-Allow-Headers": "Content-Type",
 };
@@ -98,19 +106,75 @@ async function decrypt(encoded: string, env: Env): Promise<string> {
 }
 
 // ── Auth helper ──────────────────────────────────────────────────────
-function getUserEmail(request: Request): string | null {
-	return request.headers.get("Cf-Access-Authenticated-User-Email") || null;
+//
+// Cloudflare Access sets the Cf-Access-Authenticated-User-Email header,
+// but that is a plain HTTP header — it is only trustworthy on a hostname
+// that sits behind Access, and it is directly forgeable everywhere else
+// (e.g. the workers.dev route). Identity MUST instead come from the
+// Cf-Access-Jwt-Assertion header (or CF_Authorization cookie), verified
+// against the Access team's JWKS. The email is then read from the
+// VERIFIED payload, never from the header.
+//
+// createRemoteJWKSet caches fetched keys in memory and re-fetches only as
+// needed, so the JWKS resolver is created once at module scope rather
+// than per-request.
+let jwksResolver: ReturnType<typeof createRemoteJWKSet> | null = null;
+let jwksTeamDomain: string | null = null;
+
+function getJwks(teamDomain: string) {
+	if (!jwksResolver || jwksTeamDomain !== teamDomain) {
+		jwksResolver = createRemoteJWKSet(
+			new URL("/cdn-cgi/access/certs", teamDomain),
+		);
+		jwksTeamDomain = teamDomain;
+	}
+	return jwksResolver;
 }
 
-function requireAuth(request: Request): Response | null {
-	const email = getUserEmail(request);
+function getCookie(request: Request, name: string): string | null {
+	const header = request.headers.get("Cookie");
+	if (!header) return null;
+	for (const part of header.split(";")) {
+		const eq = part.indexOf("=");
+		if (eq === -1) continue;
+		if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+	}
+	return null;
+}
+
+async function getUserEmail(request: Request, env: Env): Promise<string | null> {
+	// Fail closed: a misconfigured deployment (missing team domain/AUD)
+	// must reject requests, not fall back to trusting the header.
+	if (!env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD) return null;
+
+	const token =
+		request.headers.get("Cf-Access-Jwt-Assertion") ||
+		getCookie(request, "CF_Authorization");
+	if (!token) return null;
+
+	try {
+		const JWKS = getJwks(env.ACCESS_TEAM_DOMAIN);
+		const { payload } = await jwtVerify(token, JWKS, {
+			issuer: env.ACCESS_TEAM_DOMAIN,
+			audience: env.ACCESS_AUD,
+		});
+		return typeof payload.email === "string" ? payload.email : null;
+	} catch {
+		// Invalid signature, expired, wrong audience, malformed, JWKS fetch
+		// failure, etc. — all treated as unauthenticated.
+		return null;
+	}
+}
+
+async function requireAuth(request: Request, env: Env): Promise<{ email: string } | Response> {
+	const email = await getUserEmail(request, env);
 	if (!email) {
 		return Response.json(
 			{ ok: false, error: "Unauthorized" } satisfies ApiResponse,
 			{ status: 401, headers: CORS_HEADERS },
 		);
 	}
-	return null; // authenticated
+	return { email };
 }
 
 // ── D1 helpers ───────────────────────────────────────────────────────
@@ -216,10 +280,9 @@ export default {
 		// ── API routes ──────────────────────────────────────────────
 		if (url.pathname.startsWith("/api/")) {
 			// Require auth for all API routes
-			const authError = requireAuth(request);
-			if (authError) return authError;
-
-			const email = getUserEmail(request)!;
+			const auth = await requireAuth(request, env);
+			if (auth instanceof Response) return auth;
+			const { email } = auth;
 			await ensureUser(env.DB, email);
 
 			// GET /api/config — get user's Twilio config

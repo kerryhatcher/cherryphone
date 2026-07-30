@@ -4,6 +4,10 @@
   "main": "src/worker.ts",
   "compatibility_date": "2025-07-29",
   "compatibility_flags": ["nodejs_compat"],
+  // The Worker must only be reachable on the custom domain below, which
+  // sits behind Cloudflare Access. The default *.workers.dev route is
+  // NOT protected by Access, so it must stay disabled.
+  "workers_dev": false,
   "assets": {
     "directory": "public",
     "binding": "ASSETS"
@@ -22,6 +26,12 @@
     }
   ],
   "vars": {
-    "ENCRYPTION_KEY": ""
+    "ENCRYPTION_KEY": "",
+    // Cloudflare Zero Trust team domain, e.g. "https://your-team.cloudflareaccess.com".
+    // REPLACE with your real team domain before deploying — see README Setup.
+    "ACCESS_TEAM_DOMAIN": "https://REPLACE_ME.cloudflareaccess.com",
+    // Access Application Audience (AUD) tag for this app.
+    // REPLACE with your real AUD tag before deploying — see README Setup.
+    "ACCESS_AUD": "REPLACE_ME"
   }
 }

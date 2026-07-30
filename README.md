@@ -8,10 +8,12 @@ A WebRTC softphone dialer powered by **Cloudflare Workers** + **Twilio Voice**.
 
 ```
 Browser ──► Cloudflare Access ──► Worker ──► D1 (encrypted configs, call logs)
-                │                                │
-                │  (email OTP / SSO)              └─ AES-GCM encrypted Twilio creds
-                │
-                └─ Cf-Access-Authenticated-User-Email header
+                │                    │            │
+                │  (email OTP / SSO) │            └─ AES-GCM encrypted Twilio creds
+                │                    │
+                └─ Cf-Access-Jwt-Assertion header
+                     (verified against Access JWKS; email read from
+                      the verified payload, not from a plain header)
 ```
 
 - **Frontend:** Vanilla HTML/CSS/JS with Twilio Voice JS SDK
@@ -49,7 +51,20 @@ openssl rand -hex 16 | npx wrangler secret put ENCRYPTION_KEY
 #    Domain: phone.kerryhatcher.com
 #    Policy: Email OTP or Google SSO
 
-# 7. Deploy
+# 7. Configure Access JWT verification
+#    The Worker verifies the Cloudflare Access JWT itself rather than
+#    trusting the Cf-Access-Authenticated-User-Email header, since that
+#    header is only trustworthy on a hostname sitting behind Access.
+#    Set these two (non-secret) vars in wrangler.jsonc:
+#      - ACCESS_TEAM_DOMAIN — your Zero Trust team domain, e.g.
+#        "https://your-team.cloudflareaccess.com"
+#      - ACCESS_AUD — the Access Application's Audience (AUD) tag, found
+#        at Zero Trust dashboard → Access → Applications → your app →
+#        Overview → "Application Audience (AUD) Tag"
+#    If either is left unset, the Worker fails closed and rejects all
+#    API requests with 401.
+
+# 8. Deploy
 npx wrangler deploy
 ```
 
