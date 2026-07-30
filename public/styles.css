@@ -1,0 +1,432 @@
+/* ── Reset & Base ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #12121E;
+  --card: #1E1E2E;
+  --input: #2A2A3E;
+  --border: #3A3A4E;
+  --text: #FFFFFF;
+  --muted: #888899;
+  --accent: #7C4DFF;
+  --green: #2E7D32;
+  --red: #C62828;
+  --nav-bg: #1A1A2E;
+  --key-bg: #1E1E2E;
+  --key-hover: #2A2A3E;
+}
+
+html, body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  max-width: 480px;
+  margin: 0 auto;
+  position: relative;
+}
+
+/* ── Views ───────────────────────────────────────────────────────── */
+.view {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.view.active { display: flex; }
+
+/* ── Dialer View ─────────────────────────────────────────────────── */
+#view-dialer {
+  padding-bottom: 72px; /* space for nav bar */
+}
+
+.display-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 40px 24px 10px;
+}
+
+.number-display {
+  font-size: 40px;
+  font-weight: 300;
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  color: var(--text);
+  text-align: center;
+  min-height: 48px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 2px;
+}
+
+.call-status {
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+  margin-top: 8px;
+  min-height: 20px;
+}
+
+.dialpad-area {
+  flex: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 0 24px 24px;
+}
+
+.dialpad {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.dialpad-row {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.dialpad-key {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: none;
+  background: var(--key-bg);
+  color: var(--text);
+  font-size: 28px;
+  font-weight: 400;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dialpad-key:active,
+.dialpad-key:focus-visible {
+  background: var(--key-hover);
+  outline: none;
+}
+
+.action-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+}
+
+.action-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: var(--key-bg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.action-btn:active { background: var(--key-hover); }
+
+.call-btn {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: none;
+  background: var(--green);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+  box-shadow: 0 4px 12px rgba(46, 125, 50, 0.4);
+}
+
+.call-btn:active {
+  background: #388E3C;
+  transform: scale(0.95);
+}
+
+.call-btn.call-active {
+  background: var(--red);
+  box-shadow: 0 4px 12px rgba(198, 40, 40, 0.4);
+}
+
+.call-btn.call-active:active {
+  background: #D32F2F;
+}
+
+.spacer { width: 56px; height: 56px; }
+
+/* ── Settings View ──────────────────────────────────────────────── */
+#view-settings {
+  padding: 24px 24px 80px;
+  overflow-y: auto;
+}
+
+.settings-header {
+  text-align: center;
+  padding: 24px 0 16px;
+}
+
+.settings-header h1 {
+  font-size: 28px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.settings-header p {
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--card);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 12px;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-group label {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.field-group input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--input);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.field-group input:focus {
+  border-color: var(--accent);
+}
+
+.field-group input::placeholder {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.password-wrapper {
+  position: relative;
+}
+
+.password-wrapper input {
+  padding-right: 44px;
+}
+
+.toggle-vis {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+.toggle-vis:active { background: rgba(255,255,255,0.1); }
+
+.settings-status {
+  font-size: 13px;
+  text-align: center;
+  min-height: 20px;
+  color: var(--muted);
+}
+
+.save-btn, .clear-btn {
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.save-btn {
+  background: var(--accent);
+  color: white;
+}
+
+.save-btn:active { opacity: 0.85; }
+
+.clear-btn {
+  background: var(--input);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.clear-btn:active { background: var(--border); }
+
+.settings-info {
+  margin-top: 4px;
+}
+
+.info-card {
+  background: var(--card);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.info-card h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.info-card ol {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.8;
+  padding-left: 20px;
+}
+
+.info-card a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+/* ── Navigation Bar ──────────────────────────────────────────────── */
+.nav-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  background: var(--nav-bg);
+  border-top: 1px solid var(--border);
+  padding: 8px 0;
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+  max-width: 480px;
+  margin: 0 auto;
+  z-index: 100;
+}
+
+.nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 0;
+  transition: color 0.15s;
+}
+
+.nav-item.active {
+  color: var(--accent);
+}
+
+.nav-item svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* ── Call in-progress overlay ─────────────────────────────────────── */
+.call-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  gap: 24px;
+  padding: 24px;
+}
+
+.call-overlay .number {
+  font-size: 32px;
+  font-weight: 300;
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+  color: var(--text);
+}
+
+.call-overlay .status {
+  font-size: 16px;
+  color: var(--muted);
+}
+
+.call-overlay .duration {
+  font-size: 24px;
+  font-weight: 300;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.call-overlay .end-call-btn {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: none;
+  background: var(--red);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(198, 40, 40, 0.4);
+  transition: transform 0.1s;
+}
+
+.call-overlay .end-call-btn:active {
+  transform: scale(0.95);
+}
+
+/* ── Responsive ──────────────────────────────────────────────────── */
+@media (max-width: 400px) {
+  .dialpad-key { width: 64px; height: 64px; font-size: 24px; }
+  .call-btn { width: 64px; height: 64px; }
+  .action-btn { width: 48px; height: 48px; }
+  .spacer { width: 48px; height: 48px; }
+  .number-display { font-size: 32px; }
+}

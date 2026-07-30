@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#12121E" />
+  <title>CherryPhone</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://sdk.twilio.com/js/client/v1.14/twilio.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- Dialer View -->
+    <div id="view-dialer" class="view active">
+      <div class="display-area">
+        <div class="number-display" id="numberDisplay"></div>
+        <div class="call-status" id="callStatus">Enter a number</div>
+      </div>
+      <div class="dialpad-area">
+        <div class="dialpad" id="dialpad"></div>
+        <div class="action-row">
+          <button class="action-btn backspace-btn" id="backspaceBtn" title="Backspace">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888899" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/>
+              <line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/>
+            </svg>
+          </button>
+          <button class="call-btn" id="callBtn">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="white">
+              <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+            </svg>
+          </button>
+          <div class="spacer"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings View -->
+    <div id="view-settings" class="view">
+      <div class="settings-header">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="#7C4DFF">
+          <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/>
+        </svg>
+        <h1>Settings</h1>
+        <p>Configure Twilio to enable calling</p>
+      </div>
+      <div class="settings-form">
+        <div class="field-group">
+          <label for="accountSid">Account SID</label>
+          <input type="text" id="accountSid" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+        </div>
+        <div class="field-group">
+          <label for="authToken">Auth Token</label>
+          <div class="password-wrapper">
+            <input type="password" id="authToken" placeholder="your_auth_token" />
+            <button class="toggle-vis" id="toggleAuthToken" aria-label="Toggle visibility">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888899" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="field-group">
+          <label for="twilioNumber">Twilio Phone Number</label>
+          <input type="tel" id="twilioNumber" placeholder="+18885551212" />
+        </div>
+        <div class="field-group">
+          <label for="identity">Your Name / Identity</label>
+          <input type="text" id="identity" placeholder="CherryPhone User" />
+        </div>
+        <div class="settings-status" id="settingsStatus"></div>
+        <button class="save-btn" id="saveBtn">Save Settings</button>
+        <button class="clear-btn" id="clearBtn">Clear All</button>
+      </div>
+      <div class="settings-info">
+        <div class="info-card">
+          <h3>How It Works</h3>
+          <ol>
+            <li>Sign up at <a href="https://twilio.com" target="_blank">twilio.com</a> and get a phone number</li>
+            <li>Enter your Account SID and Auth Token above</li>
+            <li>Enter your Twilio phone number</li>
+            <li>Dial any number — the call goes directly from your browser</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation Bar -->
+    <nav class="nav-bar" id="navBar">
+      <button class="nav-item active" data-view="dialer">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+        </svg>
+        <span>Dialer</span>
+      </button>
+      <button class="nav-item" data-view="settings">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/>
+        </svg>
+        <span>Settings</span>
+      </button>
+    </nav>
+  </div>
+
+  <script type="module" src="/client.js"></script>
+</body>
+</html>
