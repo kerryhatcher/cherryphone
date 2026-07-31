@@ -145,7 +145,12 @@ async function logCall(entry) {
 	});
 }
 
-// ── Twilio Device setup ──────────────────────────────────────────────
+// ── Twilio Device setup (Voice JS SDK 2.x) ──────────────────────────
+//
+// 2.x moves per-call events onto the Call object returned by
+// device.connect() instead of a device-level "connect" event, and
+// requires an explicit device.register() call before the device can
+// receive incoming calls at all.
 async function setupDevice() {
 	if (device) {
 		device.destroy();
@@ -162,8 +167,8 @@ async function setupDevice() {
 		codecPreferences: ["opus", "pcmu"],
 	});
 
-	device.on("ready", () => {
-		console.log("Twilio device ready");
+	device.on("registered", () => {
+		console.log("Twilio device registered");
 	});
 
 	device.on("error", (error) => {
@@ -171,34 +176,24 @@ async function setupDevice() {
 		showStatus(`Device error: ${error.message}`, "#EF5350");
 	});
 
-	device.on("connect", (call) => {
-		activeCall = call;
-		showCallInProgress(dialedNumber);
-		logCall({ toNumber: dialedNumber, status: "connected", startedAt: new Date().toISOString() });
-
-		call.on("disconnect", () => {
-			const endedAt = new Date().toISOString();
-			const duration = callStartTime
-				? Math.floor((Date.now() - callStartTime) / 1000)
-				: undefined;
-			activeCall = null;
-			hideCallInProgress();
-			showStatus("Call ended", "#888899");
-			logCall({ toNumber: dialedNumber, status: "completed", durationSeconds: duration, endedAt });
-		});
-
-		call.on("error", (error) => {
-			activeCall = null;
-			hideCallInProgress();
-			showStatus(`Call error: ${error.message}`, "#EF5350");
-			logCall({ toNumber: dialedNumber, status: "failed" });
-		});
+	// NOTE: token refresh (device.updateToken() on this event) is a
+	// separate follow-up task — not wired up yet.
+	device.on("tokenWillExpire", () => {
+		console.warn("Twilio Access Token will expire soon");
 	});
 
-	device.on("disconnect", () => {
-		activeCall = null;
-		hideCallInProgress();
+	// NOTE: the incoming-call answer UI is a separate follow-up task —
+	// this just registers the device so incoming calls can ring at all.
+	device.on("incoming", (call) => {
+		console.log("Incoming call from", call.parameters.From);
 	});
+
+	try {
+		await device.register();
+	} catch (e) {
+		console.error("Twilio device registration failed:", e);
+		showStatus(`Registration failed: ${e.message || e}`, "#EF5350");
+	}
 }
 
 // ── Call button ──────────────────────────────────────────────────────
@@ -228,8 +223,33 @@ callBtn.addEventListener("click", async () => {
 			return;
 		}
 
-		const params = { To: dialedNumber };
-		await device.connect({ params });
+		const call = await device.connect({ params: { To: dialedNumber } });
+		activeCall = call;
+
+		// 2.x: connect-related events live on the returned Call, not on
+		// the Device. "accept" replaces the old device-level "connect".
+		call.on("accept", () => {
+			showCallInProgress(dialedNumber);
+			logCall({ toNumber: dialedNumber, status: "connected", startedAt: new Date().toISOString() });
+		});
+
+		call.on("disconnect", () => {
+			const endedAt = new Date().toISOString();
+			const duration = callStartTime
+				? Math.floor((Date.now() - callStartTime) / 1000)
+				: undefined;
+			activeCall = null;
+			hideCallInProgress();
+			showStatus("Call ended", "#888899");
+			logCall({ toNumber: dialedNumber, status: "completed", durationSeconds: duration, endedAt });
+		});
+
+		call.on("error", (error) => {
+			activeCall = null;
+			hideCallInProgress();
+			showStatus(`Call error: ${error.message}`, "#EF5350");
+			logCall({ toNumber: dialedNumber, status: "failed" });
+		});
 
 		callBtn.classList.add("call-active");
 		callBtn.innerHTML = checkIconSvg();
@@ -313,8 +333,11 @@ async function populateSettingsForm() {
 	const config = await getConfig();
 	if (config) {
 		$("accountSid").value = config.accountSid;
+		$("apiKeySid").value = config.apiKeySid;
+		$("twimlAppSid").value = config.twimlAppSid;
 		$("twilioNumber").value = config.twilioNumber;
 		$("identity").value = config.identity;
+		$("apiKeySecret").value = config.hasApiKeySecret ? "••••••••" : "";
 		$("authToken").value = config.hasAuthToken ? "••••••••" : "";
 	}
 }
@@ -322,17 +345,28 @@ async function populateSettingsForm() {
 // ── Settings event handlers ─────────────────────────────────────────
 saveBtn.addEventListener("click", async () => {
 	const accountSid = $("accountSid").value.trim();
+	const apiKeySid = $("apiKeySid").value.trim();
+	const apiKeySecret = $("apiKeySecret").value.trim();
+	const twimlAppSid = $("twimlAppSid").value.trim();
 	const authToken = $("authToken").value.trim();
 	const twilioNumber = $("twilioNumber").value.trim();
 	const identity = $("identity").value.trim() || "CherryPhone User";
 
-	if (!accountSid || !authToken || !twilioNumber) {
+	if (!accountSid || !apiKeySid || !apiKeySecret || !twimlAppSid || !authToken || !twilioNumber) {
 		settingsStatus.textContent = "Please fill in all required fields";
 		settingsStatus.style.color = "#EF5350";
 		return;
 	}
 
-	const ok = await saveConfigToServer({ accountSid, authToken, twilioNumber, identity });
+	const ok = await saveConfigToServer({
+		accountSid,
+		apiKeySid,
+		apiKeySecret,
+		twimlAppSid,
+		authToken,
+		twilioNumber,
+		identity,
+	});
 
 	if (ok) {
 		settingsStatus.textContent = "✓ Settings saved to server";
@@ -348,11 +382,17 @@ saveBtn.addEventListener("click", async () => {
 clearBtn.addEventListener("click", async () => {
 	await saveConfigToServer({
 		accountSid: "",
+		apiKeySid: "",
+		apiKeySecret: "",
+		twimlAppSid: "",
 		authToken: "",
 		twilioNumber: "",
 		identity: "",
 	});
 	$("accountSid").value = "";
+	$("apiKeySid").value = "";
+	$("apiKeySecret").value = "";
+	$("twimlAppSid").value = "";
 	$("authToken").value = "";
 	$("twilioNumber").value = "";
 	$("identity").value = "";
@@ -364,7 +404,11 @@ clearBtn.addEventListener("click", async () => {
 	}
 });
 
-// ── Auth token visibility toggle ────────────────────────────────────
+// ── Secret field visibility toggles ─────────────────────────────────
+$("toggleApiKeySecret").addEventListener("click", () => {
+	const input = $("apiKeySecret");
+	input.type = input.type === "password" ? "text" : "password";
+});
 $("toggleAuthToken").addEventListener("click", () => {
 	const input = $("authToken");
 	input.type = input.type === "password" ? "text" : "password";
@@ -374,10 +418,10 @@ $("toggleAuthToken").addEventListener("click", () => {
 buildDialPad();
 populateSettingsForm();
 
-// Auto-setup device if config exists
+// Auto-setup device if a full config exists
 (async () => {
 	const config = await getConfig();
-	if (config && config.hasAuthToken) {
+	if (config && config.hasApiKeySecret && config.hasAuthToken) {
 		setupDevice();
 	}
 })();

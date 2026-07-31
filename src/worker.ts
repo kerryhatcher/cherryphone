@@ -13,6 +13,9 @@
  *   POST /api/token   — generate a Twilio Access Token
  *   GET  /api/logs    — get call logs for current user
  *   POST /api/logs    — log a call event
+ *
+ * Webhook (unauthenticated by Cloudflare Access — see /voice handler):
+ *   POST /voice        — TwiML App Voice URL, called by Twilio's servers
  */
 
 import { SignJWT, createRemoteJWKSet, jwtVerify } from "jose";
@@ -28,10 +31,24 @@ interface Env {
 }
 
 interface TwilioConfig {
-	accountSid: string;
-	authToken: string;
+	apiKeySid: string; // SKxxxx — signs the Access Token, iss claim
+	apiKeySecret: string; // signing key for the Access Token
+	twimlAppSid: string; // APxxxx — outgoing.application_sid grant
+	accountSid: string; // ACxxxx — sub claim
+	authToken: string; // used ONLY to validate X-Twilio-Signature on /voice
 	twilioNumber: string;
 	identity: string;
+}
+
+interface ConfigRow {
+	user_id: string;
+	api_key_sid_encrypted: string;
+	api_key_secret_encrypted: string;
+	twiml_app_sid_encrypted: string;
+	account_sid_encrypted: string;
+	auth_token_encrypted: string;
+	twilio_number: string;
+	identity: string | null;
 }
 
 interface CallLogEntry {
@@ -187,6 +204,18 @@ async function ensureUser(db: D1Database, email: string) {
 		.run();
 }
 
+async function decryptConfigRow(row: ConfigRow, env: Env): Promise<TwilioConfig> {
+	return {
+		apiKeySid: await decrypt(row.api_key_sid_encrypted, env),
+		apiKeySecret: await decrypt(row.api_key_secret_encrypted, env),
+		twimlAppSid: await decrypt(row.twiml_app_sid_encrypted, env),
+		accountSid: await decrypt(row.account_sid_encrypted, env),
+		authToken: await decrypt(row.auth_token_encrypted, env),
+		twilioNumber: row.twilio_number,
+		identity: row.identity || row.user_id,
+	};
+}
+
 async function getStoredConfig(
 	db: D1Database,
 	email: string,
@@ -195,21 +224,27 @@ async function getStoredConfig(
 	const row = await db
 		.prepare("SELECT * FROM configs WHERE user_id = ?")
 		.bind(email)
-		.first<{
-			account_sid_encrypted: string;
-			auth_token_encrypted: string;
-			twilio_number: string;
-			identity: string | null;
-		}>();
+		.first<ConfigRow>();
 
 	if (!row) return null;
+	return decryptConfigRow(row, env);
+}
 
-	return {
-		accountSid: await decrypt(row.account_sid_encrypted, env),
-		authToken: await decrypt(row.auth_token_encrypted, env),
-		twilioNumber: row.twilio_number,
-		identity: row.identity || email,
-	};
+// Used by the /voice webhook: Twilio sends From=client:<identity>, so the
+// config has to be found by identity rather than by the authenticated
+// user's email (that route has no Access JWT to read email from).
+async function getStoredConfigByIdentity(
+	db: D1Database,
+	identity: string,
+	env: Env,
+): Promise<TwilioConfig | null> {
+	const row = await db
+		.prepare("SELECT * FROM configs WHERE identity = ?")
+		.bind(identity)
+		.first<ConfigRow>();
+
+	if (!row) return null;
+	return decryptConfigRow(row, env);
 }
 
 async function saveStoredConfig(
@@ -218,14 +253,20 @@ async function saveStoredConfig(
 	config: TwilioConfig,
 	env: Env,
 ) {
+	const apiKeySidEncrypted = await encrypt(config.apiKeySid, env);
+	const apiKeySecretEncrypted = await encrypt(config.apiKeySecret, env);
+	const twimlAppSidEncrypted = await encrypt(config.twimlAppSid, env);
 	const accountSidEncrypted = await encrypt(config.accountSid, env);
 	const authTokenEncrypted = await encrypt(config.authToken, env);
 
 	await db
 		.prepare(
-			`INSERT INTO configs (user_id, account_sid_encrypted, auth_token_encrypted, twilio_number, identity, updated_at)
-       VALUES (?, ?, ?, ?, ?, datetime('now'))
+			`INSERT INTO configs (user_id, api_key_sid_encrypted, api_key_secret_encrypted, twiml_app_sid_encrypted, account_sid_encrypted, auth_token_encrypted, twilio_number, identity, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
        ON CONFLICT(user_id) DO UPDATE SET
+         api_key_sid_encrypted = excluded.api_key_sid_encrypted,
+         api_key_secret_encrypted = excluded.api_key_secret_encrypted,
+         twiml_app_sid_encrypted = excluded.twiml_app_sid_encrypted,
          account_sid_encrypted = excluded.account_sid_encrypted,
          auth_token_encrypted = excluded.auth_token_encrypted,
          twilio_number = excluded.twilio_number,
@@ -234,6 +275,9 @@ async function saveStoredConfig(
 		)
 		.bind(
 			email,
+			apiKeySidEncrypted,
+			apiKeySecretEncrypted,
+			twimlAppSidEncrypted,
 			accountSidEncrypted,
 			authTokenEncrypted,
 			config.twilioNumber,
@@ -243,27 +287,135 @@ async function saveStoredConfig(
 }
 
 // ── Twilio Access Token generation ──────────────────────────────────
+//
+// A Twilio Access Token is a "Flex/FPA" JWT: signed with an API Key
+// Secret (never the Auth Token), iss = API Key SID, sub = Account SID,
+// and a required `cty: "twilio-fpa;v=1"` header. outgoing.application_sid
+// must be the real TwiML App SID that Twilio will POST /voice to.
 async function generateToken(config: TwilioConfig): Promise<string> {
 	const now = Math.floor(Date.now() / 1000);
 	const identity = config.identity || `cherryphone_${crypto.randomUUID().slice(0, 8)}`;
 
 	return new SignJWT({
-		jti: crypto.randomUUID(),
-		iss: config.accountSid,
-		sub: config.accountSid,
-		exp: now + TOKEN_TTL,
-		nbf: now,
-		iat: now,
 		grants: {
+			identity,
 			voice: {
 				incoming: { allow: true },
-				outgoing: { application_sid: true },
+				outgoing: { application_sid: config.twimlAppSid },
 			},
-			identity,
 		},
 	})
-		.setProtectedHeader({ alg: "HS256", typ: "JWT" })
-		.sign(new TextEncoder().encode(config.authToken));
+		.setProtectedHeader({ alg: "HS256", typ: "JWT", cty: "twilio-fpa;v=1" })
+		.setJti(crypto.randomUUID())
+		.setIssuer(config.apiKeySid)
+		.setSubject(config.accountSid)
+		.setIssuedAt(now)
+		.setNotBefore(now)
+		.setExpirationTime(now + TOKEN_TTL)
+		.sign(new TextEncoder().encode(config.apiKeySecret));
+}
+
+// ── Twilio webhook signature validation ─────────────────────────────
+//
+// Twilio signs webhook requests with HMAC-SHA1, keyed with the account's
+// Auth Token, over: the full request URL, followed by every POST param
+// sorted by key and concatenated as key+value (no separators). See
+// https://www.twilio.com/docs/usage/webhooks/webhooks-security
+async function computeTwilioSignature(
+	url: string,
+	params: Record<string, string>,
+	authToken: string,
+): Promise<string> {
+	let data = url;
+	for (const key of Object.keys(params).sort()) {
+		data += key + params[key];
+	}
+
+	const key = await crypto.subtle.importKey(
+		"raw",
+		new TextEncoder().encode(authToken),
+		{ name: "HMAC", hash: "SHA-1" },
+		false,
+		["sign"],
+	);
+	const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
+
+	let binary = "";
+	new Uint8Array(mac).forEach((b) => (binary += String.fromCharCode(b)));
+	return btoa(binary);
+}
+
+// Constant-time string comparison — avoids leaking the expected signature
+// byte-by-byte through response-time differences.
+function timingSafeEqual(a: string, b: string): boolean {
+	if (a.length !== b.length) return false;
+	let diff = 0;
+	for (let i = 0; i < a.length; i++) {
+		diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+	}
+	return diff === 0;
+}
+
+function escapeXml(value: string): string {
+	return value.replace(/[<>&'"]/g, (c) => {
+		switch (c) {
+			case "<": return "&lt;";
+			case ">": return "&gt;";
+			case "&": return "&amp;";
+			case "'": return "&apos;";
+			case '"': return "&quot;";
+			default: return c;
+		}
+	});
+}
+
+// ── /voice TwiML webhook ────────────────────────────────────────────
+//
+// This is the TwiML App's Voice URL. Twilio's servers POST here whenever
+// the browser client places an outgoing call. It is called BEFORE the
+// /api/* auth block and must never call requireAuth — Twilio cannot
+// present a Cloudflare Access JWT, so this hostname needs an Access
+// bypass policy for this exact path (see README). Instead, Twilio's
+// identity is verified directly via X-Twilio-Signature.
+async function handleVoiceWebhook(request: Request, env: Env): Promise<Response> {
+	const signature = request.headers.get("X-Twilio-Signature");
+	if (!signature) {
+		return new Response("Forbidden", { status: 403 });
+	}
+
+	const formData = await request.formData();
+	const params: Record<string, string> = {};
+	formData.forEach((value, key) => {
+		params[key] = String(value);
+	});
+
+	// client.js sets params.To; Twilio sets From to "client:<identity>"
+	// for calls originating from the Voice SDK.
+	const from = params.From || "";
+	const identity = from.startsWith("client:") ? from.slice("client:".length) : null;
+	if (!identity) {
+		return new Response("Forbidden", { status: 403 });
+	}
+
+	const config = await getStoredConfigByIdentity(env.DB, identity, env);
+	if (!config) {
+		return new Response("Forbidden", { status: 403 });
+	}
+
+	if (params.AccountSid && params.AccountSid !== config.accountSid) {
+		return new Response("Forbidden", { status: 403 });
+	}
+
+	const expected = await computeTwilioSignature(request.url, params, config.authToken);
+	if (!timingSafeEqual(expected, signature)) {
+		return new Response("Forbidden", { status: 403 });
+	}
+
+	const to = escapeXml(params.To || "");
+	const callerId = escapeXml(config.twilioNumber);
+	const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${callerId}">${to}</Dial></Response>`;
+
+	return new Response(twiml, { headers: { "Content-Type": "text/xml" } });
 }
 
 // ── Request handler ──────────────────────────────────────────────────
@@ -275,6 +427,14 @@ export default {
 		// CORS preflight
 		if (method === "OPTIONS") {
 			return new Response(null, { headers: CORS_HEADERS });
+		}
+
+		// POST /voice — TwiML App Voice URL, called by Twilio's servers.
+		// MUST stay outside the /api/* auth block: Twilio can't present a
+		// Cloudflare Access JWT, so this route authenticates the caller
+		// itself via X-Twilio-Signature instead of requireAuth().
+		if (method === "POST" && url.pathname === "/voice") {
+			return handleVoiceWebhook(request, env);
 		}
 
 		// ── API routes ──────────────────────────────────────────────
@@ -294,9 +454,12 @@ export default {
 							ok: true,
 							data: config
 								? {
+										apiKeySid: config.apiKeySid,
+										twimlAppSid: config.twimlAppSid,
 										accountSid: config.accountSid,
 										twilioNumber: config.twilioNumber,
 										identity: config.identity,
+										hasApiKeySecret: !!config.apiKeySecret,
 										hasAuthToken: !!config.authToken,
 									}
 								: null,
@@ -315,7 +478,14 @@ export default {
 			if (method === "POST" && url.pathname === "/api/config") {
 				try {
 					const body = (await request.json()) as Partial<TwilioConfig>;
-					if (!body.accountSid || !body.authToken || !body.twilioNumber) {
+					if (
+						!body.apiKeySid ||
+						!body.apiKeySecret ||
+						!body.twimlAppSid ||
+						!body.accountSid ||
+						!body.authToken ||
+						!body.twilioNumber
+					) {
 						return Response.json(
 							{ ok: false, error: "Missing required fields" } satisfies ApiResponse,
 							{ status: 400, headers: CORS_HEADERS },
@@ -323,6 +493,9 @@ export default {
 					}
 
 					const config: TwilioConfig = {
+						apiKeySid: body.apiKeySid,
+						apiKeySecret: body.apiKeySecret,
+						twimlAppSid: body.twimlAppSid,
 						accountSid: body.accountSid,
 						authToken: body.authToken,
 						twilioNumber: body.twilioNumber,
@@ -351,15 +524,24 @@ export default {
 
 					if (!config) {
 						const body = (await request.json()) as Partial<TwilioConfig>;
-						if (!body.accountSid || !body.authToken || !body.twilioNumber) {
+						if (
+							!body.apiKeySid ||
+							!body.apiKeySecret ||
+							!body.twimlAppSid ||
+							!body.accountSid ||
+							!body.twilioNumber
+						) {
 							return Response.json(
 								{ ok: false, error: "No config found. Save settings first." } satisfies ApiResponse,
 								{ status: 400, headers: CORS_HEADERS },
 							);
 						}
 						config = {
+							apiKeySid: body.apiKeySid,
+							apiKeySecret: body.apiKeySecret,
+							twimlAppSid: body.twimlAppSid,
 							accountSid: body.accountSid,
-							authToken: body.authToken,
+							authToken: body.authToken || "",
 							twilioNumber: body.twilioNumber,
 							identity: body.identity || email,
 						};

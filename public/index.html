@@ -8,7 +8,17 @@
   <meta name="theme-color" content="#12121E" />
   <title>CherryPhone</title>
   <link rel="stylesheet" href="/styles.css" />
-  <script src="https://sdk.twilio.com/js/client/v1.14/twilio.js"></script>
+  <!--
+    Voice JS SDK 2.x is npm-only — Twilio stopped hosting it on
+    sdk.twilio.com after 1.x (see README). jsDelivr mirrors the published
+    npm package's UMD bundle, which exposes the same `Twilio.Device`
+    global the 1.x CDN build did.
+  -->
+  <script
+    src="https://cdn.jsdelivr.net/npm/@twilio/voice-sdk@2.18.3/dist/twilio.min.js"
+    integrity="sha384-11P5HWF8oWyRF2MfktRrB2yWoVU12FUbjAVUwpwXhB7ziNEkkm/M/YcLs0boQLgS"
+    crossorigin="anonymous"
+  ></script>
 </head>
 <body>
   <div id="app">
@@ -50,6 +60,30 @@
         <div class="field-group">
           <label for="accountSid">Account SID</label>
           <input type="text" id="accountSid" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+          <p class="field-help">Console → Account → API keys &amp; tokens → Account SID</p>
+        </div>
+        <div class="field-group">
+          <label for="apiKeySid">API Key SID</label>
+          <input type="text" id="apiKeySid" placeholder="SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+          <p class="field-help">Console → Account → API keys &amp; tokens → Create API key (Standard)</p>
+        </div>
+        <div class="field-group">
+          <label for="apiKeySecret">API Key Secret</label>
+          <div class="password-wrapper">
+            <input type="password" id="apiKeySecret" placeholder="your_api_key_secret" />
+            <button class="toggle-vis" id="toggleApiKeySecret" aria-label="Toggle visibility">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888899" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+          <p class="field-help">Shown once when you create the API key above — copy it immediately</p>
+        </div>
+        <div class="field-group">
+          <label for="twimlAppSid">TwiML App SID</label>
+          <input type="text" id="twimlAppSid" placeholder="APxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+          <p class="field-help">Console → Voice → TwiML → TwiML Apps — set its Voice URL to this app's /voice endpoint</p>
         </div>
         <div class="field-group">
           <label for="authToken">Auth Token</label>
@@ -62,10 +96,12 @@
               </svg>
             </button>
           </div>
+          <p class="field-help">Console → Account → API keys &amp; tokens → Auth Token — used only to verify that /voice webhook requests really come from Twilio, not to sign calls</p>
         </div>
         <div class="field-group">
           <label for="twilioNumber">Twilio Phone Number</label>
           <input type="tel" id="twilioNumber" placeholder="+18885551212" />
+          <p class="field-help">The number callees will see as caller ID</p>
         </div>
         <div class="field-group">
           <label for="identity">Your Name / Identity</label>
@@ -80,8 +116,8 @@
           <h3>How It Works</h3>
           <ol>
             <li>Sign up at <a href="https://twilio.com" target="_blank">twilio.com</a> and get a phone number</li>
-            <li>Enter your Account SID and Auth Token above</li>
-            <li>Enter your Twilio phone number</li>
+            <li>Create an API Key and a TwiML App in the Twilio Console</li>
+            <li>Enter your Account SID, API Key SID/Secret, TwiML App SID, Auth Token, and phone number above</li>
             <li>Dial any number — the call goes directly from your browser</li>
           </ol>
         </div>

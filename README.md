@@ -14,6 +14,13 @@ Browser ──► Cloudflare Access ──► Worker ──► D1 (encrypted con
                 └─ Cf-Access-Jwt-Assertion header
                      (verified against Access JWKS; email read from
                       the verified payload, not from a plain header)
+
+Twilio ──► /voice (Access bypass) ──► Worker ──► D1 (config lookup by identity)
+             │
+             └─ X-Twilio-Signature header
+                  (HMAC-SHA1 over URL + sorted POST params, keyed with
+                   the account's Auth Token — Twilio can't present an
+                   Access login, so this route authenticates itself)
 ```
 
 - **Frontend:** Vanilla HTML/CSS/JS with Twilio Voice JS SDK
@@ -50,6 +57,15 @@ openssl rand -hex 16 | npx wrangler secret put ENCRYPTION_KEY
 #    Dashboard → Zero Trust → Access → Applications → Add Application
 #    Domain: phone.kerryhatcher.com
 #    Policy: Email OTP or Google SSO
+#
+#    IMPORTANT — add a second, Bypass policy scoped to the path
+#    phone.kerryhatcher.com/voice. Twilio's servers POST to /voice
+#    whenever the browser client places an outbound call, and they
+#    cannot present a Cloudflare Access login — without a bypass policy
+#    Access returns its login page to Twilio and every call fails.
+#    /voice authenticates the caller itself instead, by validating the
+#    X-Twilio-Signature header against your Auth Token (see Architecture
+#    below), so bypassing Access on this one path does not weaken auth.
 
 # 7. Configure Access JWT verification
 #    The Worker verifies the Cloudflare Access JWT itself rather than
@@ -66,6 +82,14 @@ openssl rand -hex 16 | npx wrangler secret put ENCRYPTION_KEY
 
 # 8. Deploy
 npx wrangler deploy
+
+# 9. Create a Twilio API Key and TwiML App (needed for WebRTC calling)
+#    Console → Account → API keys & tokens → Create API key (Standard)
+#      → note the SID (SKxxxx) and Secret (shown once)
+#    Console → Voice → TwiML → TwiML Apps → Create new TwiML App
+#      → Voice → "A call comes in" → Webhook
+#      → Voice URL: https://phone.kerryhatcher.com/voice  (HTTP POST)
+#      → note the TwiML App SID (APxxxx)
 ```
 
 ## Development
@@ -80,10 +104,13 @@ npx wrangler dev
 2. Authenticate via Cloudflare Access (email OTP)
 3. Go to **Settings** and enter your Twilio credentials:
    - Account SID
-   - Auth Token
-   - Twilio Phone Number
+   - API Key SID + API Key Secret (signs the WebRTC Access Token)
+   - TwiML App SID (its Voice URL must point at `/voice`, see Setup step 9)
+   - Auth Token (validates the `/voice` webhook only — not used to sign calls)
+   - Twilio Phone Number (caller ID)
 4. Go to **Dialer**, enter a number, tap the green call button
-5. Call goes directly from your browser via WebRTC
+5. The browser opens a WebRTC connection to Twilio using an Access Token;
+   Twilio calls back to `/voice` to get TwiML telling it who to dial
 
 ## API Endpoints
 
@@ -94,6 +121,7 @@ npx wrangler dev
 | `/api/token` | POST | Generate Twilio Access Token |
 | `/api/logs` | GET | Get call history |
 | `/api/logs` | POST | Log a call event |
+| `/voice` | POST | TwiML App Voice URL — called by Twilio, not the browser. Unauthenticated by Cloudflare Access (needs a bypass policy, see Setup); authenticated instead via `X-Twilio-Signature`. |
 
 ## Tech Stack
 
