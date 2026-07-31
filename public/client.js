@@ -176,16 +176,36 @@ async function setupDevice() {
 		showStatus(`Device error: ${error.message}`, "#EF5350");
 	});
 
-	// NOTE: token refresh (device.updateToken() on this event) is a
-	// separate follow-up task — not wired up yet.
-	device.on("tokenWillExpire", () => {
-		console.warn("Twilio Access Token will expire soon");
+	// The Access Token is short-lived (see TOKEN_TTL server-side). The SDK
+	// fires this shortly before expiry so the device can be refreshed
+	// in-place — without it, the device silently stops working an hour in.
+	device.on("tokenWillExpire", async () => {
+		try {
+			const tokenData = await getToken();
+			if (!tokenData || !device) {
+				showStatus("Couldn't refresh call credentials — reopen the app if calls stop working", "#EF5350");
+				return;
+			}
+			device.updateToken(tokenData.token);
+			console.log("Twilio Access Token refreshed");
+		} catch (e) {
+			console.error("Token refresh failed:", e);
+			showStatus("Couldn't refresh call credentials — reopen the app if calls stop working", "#EF5350");
+		}
 	});
 
-	// NOTE: the incoming-call answer UI is a separate follow-up task —
-	// this just registers the device so incoming calls can ring at all.
 	device.on("incoming", (call) => {
-		console.log("Incoming call from", call.parameters.From);
+		const fromNumber = call.parameters.From || "Unknown";
+		console.log("Incoming call from", fromNumber);
+		logCall({ toNumber: fromNumber, status: "ringing", direction: "inbound", callSid: call.parameters.CallSid });
+		showIncomingCallOverlay(call, fromNumber);
+
+		// Fires if the caller hangs up before the call is accepted/rejected.
+		call.on("cancel", () => {
+			hideIncomingCallOverlay();
+			showStatus("Missed call", "#888899");
+			logCall({ toNumber: fromNumber, status: "missed", direction: "inbound", callSid: call.parameters.CallSid });
+		});
 	});
 
 	try {
@@ -228,28 +248,7 @@ callBtn.addEventListener("click", async () => {
 
 		// 2.x: connect-related events live on the returned Call, not on
 		// the Device. "accept" replaces the old device-level "connect".
-		call.on("accept", () => {
-			showCallInProgress(dialedNumber);
-			logCall({ toNumber: dialedNumber, status: "connected", startedAt: new Date().toISOString() });
-		});
-
-		call.on("disconnect", () => {
-			const endedAt = new Date().toISOString();
-			const duration = callStartTime
-				? Math.floor((Date.now() - callStartTime) / 1000)
-				: undefined;
-			activeCall = null;
-			hideCallInProgress();
-			showStatus("Call ended", "#888899");
-			logCall({ toNumber: dialedNumber, status: "completed", durationSeconds: duration, endedAt });
-		});
-
-		call.on("error", (error) => {
-			activeCall = null;
-			hideCallInProgress();
-			showStatus(`Call error: ${error.message}`, "#EF5350");
-			logCall({ toNumber: dialedNumber, status: "failed" });
-		});
+		attachCallHandlers(call, dialedNumber, "outbound");
 
 		callBtn.classList.add("call-active");
 		callBtn.innerHTML = checkIconSvg();
@@ -271,6 +270,91 @@ function checkIconSvg() {
 	return `<svg width="32" height="32" viewBox="0 0 24 24" fill="white">
 		<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
 	</svg>`;
+}
+
+// ── Call event wiring (shared by outbound and inbound calls) ────────
+//
+// 2.x puts connect-related events on the Call object itself, so the
+// same handlers cover both device.connect() (outbound) and
+// call.accept() (inbound) — only the log entries' direction differs.
+function attachCallHandlers(call, remoteNumber, direction) {
+	call.on("accept", () => {
+		showCallInProgress(remoteNumber);
+		logCall({
+			toNumber: remoteNumber,
+			status: "connected",
+			direction,
+			callSid: call.parameters?.CallSid,
+			startedAt: new Date().toISOString(),
+		});
+	});
+
+	call.on("disconnect", () => {
+		const endedAt = new Date().toISOString();
+		const duration = callStartTime
+			? Math.floor((Date.now() - callStartTime) / 1000)
+			: undefined;
+		activeCall = null;
+		hideCallInProgress();
+		showStatus("Call ended", "#888899");
+		logCall({
+			toNumber: remoteNumber,
+			status: "completed",
+			direction,
+			durationSeconds: duration,
+			callSid: call.parameters?.CallSid,
+			endedAt,
+		});
+	});
+
+	call.on("error", (error) => {
+		activeCall = null;
+		hideCallInProgress();
+		hideIncomingCallOverlay();
+		showStatus(`Call error: ${error.message}`, "#EF5350");
+		logCall({ toNumber: remoteNumber, status: "failed", direction, callSid: call.parameters?.CallSid });
+	});
+}
+
+// ── Incoming-call overlay ────────────────────────────────────────────
+let incomingOverlay = null;
+
+function showIncomingCallOverlay(call, fromNumber) {
+	incomingOverlay = document.createElement("div");
+	incomingOverlay.className = "call-overlay incoming-overlay";
+	incomingOverlay.innerHTML = `
+		<div class="status">Incoming call</div>
+		<div class="number">${fromNumber}</div>
+		<div class="incoming-actions">
+			<button class="incoming-btn reject-btn" id="rejectCallBtn" aria-label="Reject">
+				${phoneIconSvg()}
+			</button>
+			<button class="incoming-btn accept-btn" id="acceptCallBtn" aria-label="Accept">
+				${phoneIconSvg()}
+			</button>
+		</div>
+	`;
+	document.body.appendChild(incomingOverlay);
+
+	$("acceptCallBtn").addEventListener("click", () => {
+		hideIncomingCallOverlay();
+		activeCall = call;
+		attachCallHandlers(call, fromNumber, "inbound");
+		call.accept();
+	});
+
+	$("rejectCallBtn").addEventListener("click", () => {
+		call.reject();
+		logCall({ toNumber: fromNumber, status: "rejected", direction: "inbound", callSid: call.parameters?.CallSid });
+		hideIncomingCallOverlay();
+	});
+}
+
+function hideIncomingCallOverlay() {
+	if (incomingOverlay) {
+		incomingOverlay.remove();
+		incomingOverlay = null;
+	}
 }
 
 // ── Call in-progress overlay ─────────────────────────────────────────
@@ -379,29 +463,56 @@ saveBtn.addEventListener("click", async () => {
 	}
 });
 
-clearBtn.addEventListener("click", async () => {
-	await saveConfigToServer({
-		accountSid: "",
-		apiKeySid: "",
-		apiKeySecret: "",
-		twimlAppSid: "",
-		authToken: "",
-		twilioNumber: "",
-		identity: "",
-	});
-	$("accountSid").value = "";
-	$("apiKeySid").value = "";
-	$("apiKeySecret").value = "";
-	$("twimlAppSid").value = "";
-	$("authToken").value = "";
-	$("twilioNumber").value = "";
-	$("identity").value = "";
-	settingsStatus.textContent = "All settings cleared";
-	settingsStatus.style.color = "#888899";
-	if (device) {
-		device.destroy();
-		device = null;
+// Clearing credentials is destructive and irreversible, so it needs a
+// confirmation step. window.confirm()/alert() are avoided deliberately —
+// they block the page and break automated testing of this app — so this
+// is an inline two-step confirm: the first tap arms it, a second tap
+// within the window confirms, and it auto-disarms if left alone.
+const CLEAR_CONFIRM_TIMEOUT_MS = 4000;
+let clearConfirmTimer = null;
+
+function resetClearButton() {
+	if (clearConfirmTimer) {
+		clearTimeout(clearConfirmTimer);
+		clearConfirmTimer = null;
 	}
+	clearBtn.textContent = "Clear All";
+	clearBtn.classList.remove("confirm");
+}
+
+clearBtn.addEventListener("click", async () => {
+	if (!clearConfirmTimer) {
+		clearBtn.textContent = "Really clear? Tap again to confirm";
+		clearBtn.classList.add("confirm");
+		clearConfirmTimer = setTimeout(resetClearButton, CLEAR_CONFIRM_TIMEOUT_MS);
+		return;
+	}
+
+	resetClearButton();
+	clearBtn.disabled = true;
+
+	const res = await apiFetch("/api/config", { method: "DELETE" });
+
+	if (res.ok) {
+		$("accountSid").value = "";
+		$("apiKeySid").value = "";
+		$("apiKeySecret").value = "";
+		$("twimlAppSid").value = "";
+		$("authToken").value = "";
+		$("twilioNumber").value = "";
+		$("identity").value = "";
+		settingsStatus.textContent = "All settings cleared";
+		settingsStatus.style.color = "#888899";
+		if (device) {
+			device.destroy();
+			device = null;
+		}
+	} else {
+		settingsStatus.textContent = `✗ Failed to clear settings: ${res.error || "unknown error"}`;
+		settingsStatus.style.color = "#EF5350";
+	}
+
+	clearBtn.disabled = false;
 });
 
 // ── Secret field visibility toggles ─────────────────────────────────

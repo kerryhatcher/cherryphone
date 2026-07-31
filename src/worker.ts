@@ -8,11 +8,12 @@
  * it is a plain HTTP header that anyone can forge on unprotected routes.
  *
  * API endpoints:
- *   GET  /api/config  — get current user's Twilio config
- *   POST /api/config  — save current user's Twilio config
- *   POST /api/token   — generate a Twilio Access Token
- *   GET  /api/logs    — get call logs for current user
- *   POST /api/logs    — log a call event
+ *   GET    /api/config — get current user's Twilio config
+ *   POST   /api/config — save current user's Twilio config
+ *   DELETE /api/config — clear current user's Twilio config
+ *   POST   /api/token  — generate a Twilio Access Token
+ *   GET    /api/logs   — get call logs for current user
+ *   POST   /api/logs   — log a call event
  *
  * Webhook (unauthenticated by Cloudflare Access — see /voice handler):
  *   POST /voice        — TwiML App Voice URL, called by Twilio's servers
@@ -54,6 +55,7 @@ interface ConfigRow {
 interface CallLogEntry {
 	toNumber: string;
 	status: string;
+	direction?: string; // 'outbound' | 'inbound' — defaults to 'outbound'
 	durationSeconds?: number;
 	callSid?: string;
 	startedAt?: string;
@@ -73,7 +75,7 @@ const TOKEN_TTL = 3600; // 1 hour
 // the ASSETS binding, so no cross-origin caller should ever need these
 // endpoints. No Access-Control-Allow-Origin header is set.
 const CORS_HEADERS = {
-	"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+	"Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
 	"Access-Control-Allow-Headers": "Content-Type",
 };
 
@@ -526,6 +528,26 @@ export default {
 				}
 			}
 
+			// DELETE /api/config — clear user's Twilio config
+			if (method === "DELETE" && url.pathname === "/api/config") {
+				try {
+					await env.DB
+						.prepare("DELETE FROM configs WHERE user_id = ?")
+						.bind(email)
+						.run();
+
+					return Response.json(
+						{ ok: true, data: { message: "Config cleared" } } satisfies ApiResponse,
+						{ headers: CORS_HEADERS },
+					);
+				} catch (e) {
+					return Response.json(
+						{ ok: false, error: `Failed to clear config: ${e}` } satisfies ApiResponse,
+						{ status: 500, headers: CORS_HEADERS },
+					);
+				}
+			}
+
 			// POST /api/token — generate a Twilio Access Token
 			if (method === "POST" && url.pathname === "/api/token") {
 				try {
@@ -601,13 +623,14 @@ export default {
 					const body = (await request.json()) as CallLogEntry;
 					await env.DB
 						.prepare(
-							`INSERT INTO call_logs (user_id, to_number, status, duration_seconds, call_sid, started_at, ended_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+							`INSERT INTO call_logs (user_id, to_number, status, direction, duration_seconds, call_sid, started_at, ended_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 						)
 						.bind(
 							email,
 							body.toNumber,
 							body.status,
+							body.direction || "outbound",
 							body.durationSeconds || null,
 							body.callSid || null,
 							body.startedAt || null,

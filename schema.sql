@@ -32,8 +32,10 @@ CREATE INDEX IF NOT EXISTS idx_configs_identity ON configs(identity);
 CREATE TABLE IF NOT EXISTS call_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id TEXT NOT NULL,
-  to_number TEXT NOT NULL,
-  status TEXT NOT NULL,              -- 'initiated', 'connected', 'completed', 'failed'
+  to_number TEXT NOT NULL,           -- remote party's number: callee for outbound, caller for inbound
+  status TEXT NOT NULL,              -- outbound: 'initiated', 'connected', 'completed', 'failed'
+                                      -- inbound: 'ringing', 'connected', 'completed', 'rejected', 'missed', 'failed'
+  direction TEXT NOT NULL DEFAULT 'outbound', -- 'outbound' or 'inbound'
   duration_seconds INTEGER,
   call_sid TEXT,
   started_at TEXT,

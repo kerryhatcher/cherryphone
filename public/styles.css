@@ -309,6 +309,11 @@ html, body {
 
 .clear-btn:active { background: var(--border); }
 
+.clear-btn.confirm {
+  color: var(--red);
+  border-color: var(--red);
+}
+
 .settings-info {
   margin-top: 4px;
 }
@@ -427,6 +432,51 @@ html, body {
 
 .call-overlay .end-call-btn:active {
   transform: scale(0.95);
+}
+
+/* ── Incoming-call overlay ───────────────────────────────────────── */
+.incoming-overlay .status {
+  font-size: 16px;
+  color: var(--muted);
+}
+
+.incoming-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 56px;
+  margin-top: 8px;
+}
+
+.incoming-btn {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: none;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.1s;
+}
+
+.incoming-btn:active {
+  transform: scale(0.95);
+}
+
+.incoming-btn.accept-btn {
+  background: var(--green);
+  box-shadow: 0 4px 12px rgba(46, 125, 50, 0.4);
+}
+
+.incoming-btn.reject-btn {
+  background: var(--red);
+  box-shadow: 0 4px 12px rgba(198, 40, 40, 0.4);
+}
+
+.incoming-btn.reject-btn svg {
+  transform: rotate(135deg);
 }
 
 /* ── Responsive ──────────────────────────────────────────────────── */
