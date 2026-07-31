@@ -103,7 +103,7 @@ async function getEncryptionKey(env: Env): Promise<CryptoKey> {
 	);
 }
 
-async function encrypt(plaintext: string, env: Env): Promise<string> {
+export async function encrypt(plaintext: string, env: Env): Promise<string> {
 	const key = await getEncryptionKey(env);
 	const iv = crypto.getRandomValues(new Uint8Array(12));
 	const encoded = new TextEncoder().encode(plaintext);
@@ -121,7 +121,7 @@ async function encrypt(plaintext: string, env: Env): Promise<string> {
 	return btoa(binary);
 }
 
-async function decrypt(encoded: string, env: Env): Promise<string> {
+export async function decrypt(encoded: string, env: Env): Promise<string> {
 	const key = await getEncryptionKey(env);
 	const combined = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
 	const iv = combined.slice(0, 12);
