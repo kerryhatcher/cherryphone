@@ -45,13 +45,22 @@ npm install
 # 2. Create the D1 database
 npx wrangler d1 create cherryphone
 
-# 3. Update database_id in wrangler.jsonc with the returned ID
+# 3. Update database_id in wrangler.jsonc with the returned ID.
+#    wrangler.jsonc ships with a placeholder
+#    ("REPLACE_ME-run-wrangler-d1-create-cherryphone") that cannot be
+#    mistaken for a real database — deploys will fail until you replace
+#    it with the UUID that `wrangler d1 create` prints out. This step
+#    only affects `wrangler deploy` (remote); `wrangler dev` (local)
+#    works fine with the placeholder since miniflare simulates D1
+#    locally without needing a real database_id.
 
-# 4. Apply the schema
-npx wrangler d1 execute cherryphone --file=schema.sql
+# 4. Apply the schema to the remote (production) database
+npx wrangler d1 execute cherryphone --remote --file=schema.sql
+#    For local development instead, use `just db-schema-local`, which
+#    targets miniflare's local D1 and needs no real database_id.
 
 # 5. Generate and set the encryption key
-openssl rand -hex 16 | npx wrangler secret put ENCRYPTION_KEY
+openssl rand -hex 32 | npx wrangler secret put ENCRYPTION_KEY
 
 # 6. Set up Cloudflare Access
 #    Dashboard → Zero Trust → Access → Applications → Add Application

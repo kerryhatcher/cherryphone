@@ -81,7 +81,17 @@ const CORS_HEADERS = {
 async function getEncryptionKey(env: Env): Promise<CryptoKey> {
 	const raw = env.ENCRYPTION_KEY;
 	if (!raw) throw new Error("ENCRYPTION_KEY not configured");
-	const keyBytes = new TextEncoder().encode(raw).slice(0, 32);
+	// Must be 64 hex characters decoding to exactly 32 bytes (AES-256).
+	// Fail closed on any mismatch — never truncate or pad the key.
+	if (!/^[0-9a-fA-F]{64}$/.test(raw)) {
+		throw new Error(
+			"ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes for AES-256); generate one with `openssl rand -hex 32`",
+		);
+	}
+	const keyBytes = new Uint8Array(32);
+	for (let i = 0; i < 32; i++) {
+		keyBytes[i] = parseInt(raw.slice(i * 2, i * 2 + 2), 16);
+	}
 	return crypto.subtle.importKey(
 		"raw",
 		keyBytes,

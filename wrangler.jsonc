@@ -16,7 +16,12 @@
     {
       "binding": "DB",
       "database_name": "cherryphone",
-      "database_id": "cherryphone"
+      // Placeholder — NOT a real database. Run `npx wrangler d1 create
+      // cherryphone` yourself (see README Setup) and paste the returned
+      // database_id here before the first remote deploy. `wrangler dev`
+      // works fine with this placeholder since miniflare simulates D1
+      // locally and doesn't need a real ID.
+      "database_id": "REPLACE_ME-run-wrangler-d1-create-cherryphone"
     }
   ],
   "routes": [
@@ -25,8 +30,12 @@
       "custom_domain": true
     }
   ],
+  // NOTE: ENCRYPTION_KEY is intentionally NOT listed here. `vars` are
+  // plaintext config, but ENCRYPTION_KEY is a secret — set it with
+  // `wrangler secret put ENCRYPTION_KEY` (see README Setup / `just
+  // secret-key`). It still arrives on env at runtime; it's just not
+  // committed to source control or visible in the dashboard config.
   "vars": {
-    "ENCRYPTION_KEY": "",
     // Cloudflare Zero Trust team domain, e.g. "https://your-team.cloudflareaccess.com".
     // REPLACE with your real team domain before deploying — see README Setup.
     "ACCESS_TEAM_DOMAIN": "https://REPLACE_ME.cloudflareaccess.com",

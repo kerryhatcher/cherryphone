@@ -8,9 +8,13 @@ run:
 deploy:
     npx wrangler deploy
 
-# Apply D1 schema
+# Apply D1 schema locally (safe default — targets miniflare's local D1)
+db-schema-local:
+    npx wrangler d1 execute cherryphone --local --file=schema.sql
+
+# Apply D1 schema to the REMOTE (production) database
 db-schema:
-    npx wrangler d1 execute cherryphone --file=schema.sql
+    npx wrangler d1 execute cherryphone --remote --file=schema.sql
 
 # Create D1 database (run once)
 db-create:
@@ -18,7 +22,7 @@ db-create:
 
 # Set encryption key secret
 secret-key:
-    @printf "Enter encryption key (32 hex chars): " && read key && echo "$$key" | npx wrangler secret put ENCRYPTION_KEY
+    @printf "Enter encryption key (64 hex chars): " && read key && echo "$$key" | npx wrangler secret put ENCRYPTION_KEY
 
 # Install dependencies
 setup:
