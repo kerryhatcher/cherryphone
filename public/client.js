@@ -322,9 +322,14 @@ let incomingOverlay = null;
 function showIncomingCallOverlay(call, fromNumber) {
 	incomingOverlay = document.createElement("div");
 	incomingOverlay.className = "call-overlay incoming-overlay";
+	// fromNumber comes from call.parameters.From — caller ID set by the
+	// remote party over the network, not by our own code. Caller ID is
+	// trivially spoofable, so it must never be interpolated into HTML;
+	// the markup below is static, and the number is assigned via
+	// textContent (never innerHTML) just after.
 	incomingOverlay.innerHTML = `
 		<div class="status">Incoming call</div>
-		<div class="number">${fromNumber}</div>
+		<div class="number"></div>
 		<div class="incoming-actions">
 			<button class="incoming-btn reject-btn" id="rejectCallBtn" aria-label="Reject">
 				${phoneIconSvg()}
@@ -334,6 +339,7 @@ function showIncomingCallOverlay(call, fromNumber) {
 			</button>
 		</div>
 	`;
+	incomingOverlay.querySelector(".number").textContent = fromNumber;
 	document.body.appendChild(incomingOverlay);
 
 	$("acceptCallBtn").addEventListener("click", () => {
@@ -363,8 +369,13 @@ let callOverlay = null;
 function showCallInProgress(number) {
 	callOverlay = document.createElement("div");
 	callOverlay.className = "call-overlay";
+	// `number` is the dialed digits for an outbound call (safe — built only
+	// from the dialpad's own 0-9/*/# keys) but the remote party's caller ID
+	// for an inbound call, which is attacker-controlled and spoofable. Since
+	// this function serves both paths, treat `number` as untrusted here too:
+	// static markup only, value assigned via textContent below.
 	callOverlay.innerHTML = `
-		<div class="number">${number}</div>
+		<div class="number"></div>
 		<div class="status">Connected</div>
 		<div class="duration" id="callDuration">00:00</div>
 		<button class="end-call-btn" id="endCallOverlay">
@@ -373,6 +384,7 @@ function showCallInProgress(number) {
 			</svg>
 		</button>
 	`;
+	callOverlay.querySelector(".number").textContent = number;
 	document.body.appendChild(callOverlay);
 
 	callStartTime = Date.now();
