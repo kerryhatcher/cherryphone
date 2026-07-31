@@ -1,3 +1,5 @@
+> **Archived:** This document describes a superseded design direction (a Python cross-platform app) that was not built. See [`docs/archive/README.md`](../README.md) for what was actually implemented.
+
 # Python Cross-Platform UI Frameworks — Research Summary
 
 > **Project:** CherryPhone  

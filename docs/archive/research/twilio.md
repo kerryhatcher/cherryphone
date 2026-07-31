@@ -1,3 +1,5 @@
+> **Archived — do not use as an implementation reference.** This document describes a different calling architecture (server-side conference bridge via the Twilio REST API) with a different credential model (Account SID + Auth Token) than what was built (browser-native WebRTC via the Twilio Voice JS SDK, using an API Key pair + TwiML Application). See [`docs/archive/README.md`](../README.md) for details.
+
 # Twilio Python SDK — Voice Call Integration for CherryPhone
 
 > **GitHub:** [github.com/twilio/twilio-python](https://github.com/twilio/twilio-python)  
