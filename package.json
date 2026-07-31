@@ -4,6 +4,10 @@
   "description": "A phone dialer app powered by Cloudflare Workers + Twilio",
   "type": "module",
   "scripts": {
+    "vendor:sdk": "node scripts/vendor-sdk.mjs",
+    "postinstall": "npm run vendor:sdk",
+    "predev": "npm run vendor:sdk",
+    "predeploy": "npm run vendor:sdk",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "types": "wrangler types",
@@ -19,6 +23,7 @@
     "wrangler": "^4.0.0"
   },
   "dependencies": {
+    "@twilio/voice-sdk": "2.18.3",
     "jose": "^5.9.0"
   }
 }

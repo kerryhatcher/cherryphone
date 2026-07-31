@@ -23,7 +23,7 @@ Twilio ──► /voice (Access bypass) ──► Worker ──► D1 (config lo
                    Access login, so this route authenticates itself)
 ```
 
-- **Frontend:** Vanilla HTML/CSS/JS with Twilio Voice JS SDK
+- **Frontend:** Vanilla HTML/CSS/JS with Twilio Voice JS SDK (vendored from npm, served same-origin — see [Vendoring the Twilio Voice SDK](#vendoring-the-twilio-voice-sdk))
 - **Backend:** Cloudflare Worker (TypeScript)
 - **Auth:** Cloudflare Access (email OTP / Google SSO)
 - **Database:** D1 (SQLite) for encrypted configs + call logs
@@ -135,8 +135,47 @@ npx wrangler dev
 ## Tech Stack
 
 - **Runtime:** Cloudflare Workers (TypeScript)
-- **Frontend:** Vanilla JS + Twilio Voice JS SDK
+- **Frontend:** Vanilla JS + Twilio Voice JS SDK (vendored, same-origin)
 - **Database:** D1 (SQLite)
 - **Auth:** Cloudflare Access
 - **Voice:** Twilio Programmable Voice
 - **Encryption:** Web Crypto API (AES-GCM)
+
+## Vendoring the Twilio Voice SDK
+
+The Voice SDK is npm-only for 2.x — Twilio dropped CDN hosting after 1.x —
+so instead of pulling `twilio.min.js` from a third-party CDN (jsDelivr,
+unpkg, etc.) at page-load time, it's installed as a normal npm dependency
+and copied into `public/vendor/` so it's served from this app's own
+origin, same as every other static asset.
+
+Why this instead of a CDN `<script src>`:
+
+- **Availability** — the dialer doesn't depend on a third party being up
+  or unblocked.
+- **Reproducibility** — the version lives in `package.json` /
+  `package-lock.json`, where `npm audit` and Dependabot can see it,
+  instead of being pinned only in an HTML attribute.
+- **Privacy** — the app sits behind Cloudflare Access; a CDN `<script>`
+  tag would leak every visitor's IP and referrer to that third party on
+  every page load, regardless of Access.
+
+`scripts/vendor-sdk.mjs` copies
+`node_modules/@twilio/voice-sdk/dist/twilio.min.js` to
+`public/vendor/twilio-voice-<version>.min.js` (the version in the
+filename gives cache-busting for free). It runs automatically via the
+`vendor:sdk` npm script, wired into `postinstall`, `predev`, and
+`predeploy` — and via the `vendor` recipe in the `justfile`, which `just
+run` and `just deploy` depend on. The copied file is committed to the
+repo (not gitignored): `wrangler deploy` uploads whatever's in `public/`,
+so a missing vendor file would silently ship a broken dialer, and a
+committed copy means a fresh checkout works even before `npm install`
+runs, and the deployed bytes are reviewable in `git diff`.
+
+To bump the SDK version:
+
+1. `npm install --save @twilio/voice-sdk@<new-version>`
+2. Update `SDK_VERSION` in `scripts/vendor-sdk.mjs`
+3. Update the `<script src>` path in `public/index.html`
+4. Run `npm run vendor:sdk` (or `just vendor`) and delete the old
+   `public/vendor/twilio-voice-<old-version>.min.js`

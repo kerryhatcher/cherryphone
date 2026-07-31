@@ -1,11 +1,15 @@
 # CherryPhone — local dev commands
 
+# Vendor the Twilio Voice SDK into public/ (see scripts/vendor-sdk.mjs)
+vendor:
+    node scripts/vendor-sdk.mjs
+
 # Start local dev environment (wrangler dev with D1)
-run:
+run: vendor
     npx wrangler dev --ip 0.0.0.0
 
 # Deploy to production
-deploy:
+deploy: vendor
     npx wrangler deploy
 
 # Apply D1 schema locally (safe default — targets miniflare's local D1)

@@ -11,15 +11,19 @@
   <link rel="stylesheet" href="/styles.css" />
   <!--
     Voice JS SDK 2.x is npm-only — Twilio stopped hosting it on
-    sdk.twilio.com after 1.x (see README). jsDelivr mirrors the published
-    npm package's UMD bundle, which exposes the same `Twilio.Device`
-    global the 1.x CDN build did.
+    sdk.twilio.com after 1.x (see README). Rather than pulling the UMD
+    bundle from a third-party CDN, it's vendored from the npm package
+    into public/vendor/ (see scripts/vendor-sdk.mjs, run automatically
+    via `npm run vendor:sdk` / `just vendor`) and served from this app's
+    own origin. No `integrity`/`crossorigin` here — SRI guards against a
+    third-party origin serving unexpected bytes; on a same-origin asset
+    it adds nothing (anyone who could tamper with this file could tamper
+    with the script too) while adding a brittle failure mode. To bump
+    the SDK version: update the version in package.json and
+    scripts/vendor-sdk.mjs, update the src path below, then re-run the
+    vendor script.
   -->
-  <script
-    src="https://cdn.jsdelivr.net/npm/@twilio/voice-sdk@2.18.3/dist/twilio.min.js"
-    integrity="sha384-11P5HWF8oWyRF2MfktRrB2yWoVU12FUbjAVUwpwXhB7ziNEkkm/M/YcLs0boQLgS"
-    crossorigin="anonymous"
-  ></script>
+  <script src="/vendor/twilio-voice-2.18.3.min.js"></script>
 </head>
 <body>
   <div id="app">
